@@ -1,5 +1,5 @@
 import streamlit as st
-import agent_v6_refined as agent 
+import agent_v6 as agent 
 
 st.set_page_config(
     page_title= "Research Assistant",

@@ -1,0 +1,10 @@
+venv/
+.env
+
+# hide these from git 
+agent_v2.py
+agent_v3.py
+agent_v4.py
+agent_v5.py
+agent_v6_old.py
+agent_v6.txt
