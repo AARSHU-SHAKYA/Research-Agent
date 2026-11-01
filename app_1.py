@@ -125,8 +125,12 @@ if prompt:
 
     # create a new conversation only if it doesnt exost
     if st.session_state.chat_id is None:
-        
-        cursor.execute("INSERT INTO chats (title) VALUES (?)", (prompt,))
+        title = prompt[:35]
+
+        if len(prompt) > 35:
+            title += "..."
+
+        cursor.execute("INSERT INTO chats (title) VALUES (?)", (title,))
         conn.commit()
         st.session_state.chat_id = cursor.lastrowid    
 
