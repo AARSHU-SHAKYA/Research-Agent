@@ -95,22 +95,25 @@ if st.session_state.chat_id is not None:
 prompt = st.chat_input("Ask any research question...")
 
 if prompt:
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
     # create a new conversation only if it doesnt exost
     if st.session_state.chat_id is None:
+        
         cursor.execute("INSERT INTO chats (title) VALUES (?)", (prompt,))
-
         conn.commit()
-
         st.session_state.chat_id = cursor.lastrowid
 
     # save the user's message 
     conn.execute("INSERT INTO messages(chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "user",prompt))
-
     conn.commit()
 
     # for checking purpose, we are using static reply
     assistant_reply = "Hello!, I am your assistant."
 
-    cursor.execute("INSERT INTO messages (chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "assistant",assistant_reply))
+    with st.chat_message("assistant"):
+        st.markdown(assistant_reply)
 
+    cursor.execute("INSERT INTO messages (chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "assistant",assistant_reply))
     conn.commit()
