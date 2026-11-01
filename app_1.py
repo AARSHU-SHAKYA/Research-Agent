@@ -107,10 +107,6 @@ with st.sidebar:
             with st.popover("...", use_container_width= True):
                 st.write("Options") 
 
-                if st.button("Rename", key = f"rename_{chat_id}"):
-                    st.session_state.rename_chat_id = chat_id  # sets chat_id to something for the entire session so that messages from this particular chat_id can be displayed 
-                    st.rerun()
-
                 if st.button("Delete", key = f"delete_{chat_id}"):
                     cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
 
@@ -122,23 +118,6 @@ with st.sidebar:
                         st.session_state.chat_id = None
 
                     st.rerun()     
-
-     # Rename conversation
-    if "rename_chat_id" in st.session_state:
-        chat_id = st.session_state.rename_chat_id
-
-        new_title = st.text_input("New conversation title")
-
-        if st.button("Save title"):
-            cursor.execute(
-                "UPDATE chats SET title = ? WHERE chat_id = ?",
-                (new_title, chat_id)
-            )
-            conn.commit()
-
-            del st.session_state.rename_chat_id
-            st.rerun()
-
 
 
 # only retrive messages if a conversation is active 
