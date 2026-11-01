@@ -71,6 +71,11 @@ if "chat_id" not in st.session_state:
 
     st.session_state.chat_id = result[0]
 
+# button to start a new conversation 
+if st.button("+ New Chat"):
+    st.session_state.chat_id = None 
+    st.rerun()
+
 st.write("Current chat id:", st.session_state.chat_id)
 
 
@@ -82,6 +87,8 @@ if st.session_state.chat_id is not None:
     for role, content in messages:
         with st.chat_message(role):
             st.markdown(content)
+
+
 
 
 # taking user input 
