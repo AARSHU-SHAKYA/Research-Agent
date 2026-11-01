@@ -30,22 +30,58 @@ FOREIGN KEY(chat_id) REFERENCES chats(chat_id)
 """)
 conn.commit()
 
-# inserting into database  -> since we are just inserting one value, we need to specify that its a tuple so we add comma after first value 
-# cursor.execute("INSERT INTO chats (title) VALUES (?)", ("What is Artificial Intelligence?",))
-# conn.commit()
-
-#  it helps us to find which chat are we currently looking at 
-# chat_id = cursor.lastrowid
-# print("New chat ID:", chat_id)
-
-# cursor.execute("INSERT INTO messages(chat_id, role, content) VALUES (?,?,?)", (chat_id, "user","What is AI?"))
-# cursor.execute("INSERT INTO messages(chat_id, role, content) VALUES (?,?,?)",(chat_id, "assistant","AI stands for Artificial Intelligence."))
-# conn.commit()
-
 
 #-------- retrival of chat title and its id for sidebar ------
 cursor.execute("SELECT * FROM chats ORDER BY chat_id DESC")  # fetches chat_id and then its title, newest first 
 chats = cursor.fetchall()
+
+
+#css 
+st.markdown("""
+<style>
+[data-testid = "stMainBlockContainer"]{
+padding-top: 1.5rem !important;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+
+[data-testid="stMainBlockContainer"] h1 {
+    font-size: 1.6rem !important;
+    font-family: 'Manrope', sans-serif;
+    font-weight: 500;
+    }
+
+.stSidebar button{
+    background-color: transparent; 
+    border: none; 
+    color: inherit;
+    text-align: left;
+    border-radius: 8px;
+    width: 100%;
+}
+
+.stSidebar button:hover {
+    background-color: rgba(128, 128, 128, 0.15);
+    border: none;
+    color: inherit;
+}
+
+.stSidebar button[kind="primary"]{
+    background-color: #343541;
+    color: white;
+    border: none;
+}
+</style>
+""", unsafe_allow_html= True)
+
+
+st.title("Resora AI")
+# Check whether a chat_id already exists in the current Streamlit session.
+# Session state preserves values across reruns, so we only initialize it once.
+if "chat_id" not in st.session_state:
+    st.session_state.chat_id = None
+
+# st.write("Current chat id:", st.session_state.chat_id)
 
 with st.sidebar:
     st.title("Research Assistant")
@@ -58,23 +94,11 @@ with st.sidebar:
 
     # we need to make these titles clickable
     for chat_id, title in chats:
-        if st.button(title, key= chat_id):  # creates a button 
+        is_active = chat_id == st.session_state.chat_id
+        if st.button(title, key= chat_id, type="primary" if is_active else "secondary"):  # creates a button 
             st.session_state.chat_id = chat_id  # sets chat_id to something for the entire session so that messages from this particular chat_id can be displayed 
             st.rerun()
 
-# Check whether a chat_id already exists in the current Streamlit session.
-# Session state preserves values across reruns, so we only initialize it once.
-if "chat_id" not in st.session_state:
-    cursor.execute("SELECT MAX(chat_id) FROM chats")
-    result = cursor.fetchone()
-
-    st.session_state.chat_id = result[0]
-
-
-st.write("Current chat id:", st.session_state.chat_id)
-
-
-# helps retrive last chat_id message with user and assistant 
 
 # only retrive messages if a conversation is active 
 if st.session_state.chat_id is not None:
@@ -85,8 +109,12 @@ if st.session_state.chat_id is not None:
         with st.chat_message(role):
             st.markdown(content)
 
-
-
+else:
+    st.markdown("""
+<div style = "text-align: center; padding-top: 78px;">
+    <h3>What's on the agenda today?</h3>
+</div>
+""", unsafe_allow_html= True)
 
 # taking user input 
 prompt = st.chat_input("Ask any research question...")
