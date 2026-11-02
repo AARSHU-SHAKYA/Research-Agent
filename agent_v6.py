@@ -124,6 +124,29 @@ def get_sources(sub_questions):
     return new_count
 
 
+def search_followup_sources(user_follow_up, existing_sources):
+    existing_urls = {source["url"] for source in existing_sources}
+    new_sources = []
+
+    try:
+        results = tavily.search(
+            user_follow_up,
+            max_results=RESULTS_PER_SEARCH,
+            search_depth=SEARCH_DEPTH
+        )["results"]
+
+        for result in results:
+            if result["url"] not in existing_urls:
+                new_sources.append(result)
+                existing_urls.add(result["url"])
+
+    except Exception as e:
+        print(f"Follow-up search failed: {e}")
+
+    return new_sources
+
+
+
 def find_gaps(question, searched):
     short_text = ""
     for i, r in enumerate(sources, start=1):
@@ -185,7 +208,7 @@ class BatchVerdicts(BaseModel):
 
 # ---------------- Verification ----------------
 # Layer 1: is the quote really inside the cited source (title + content)?
-def isVerified(block):
+def isVerified(block, sources):
     number = block.citation_source_number
     if not (1 <= number <= len(sources)):
         return False
@@ -252,22 +275,22 @@ def verify_sentence_quote(items_to_verify):
         return None
 
 
-def get_verdict(block, all_verdicts):  # all verdicts contain verdict map such as {id} -> yes, no, partial 
+def get_verdict(block, all_verdicts, sources):  # all verdicts contain verdict map such as {id} -> yes, no, partial 
     """YES / PARTIAL / NO for one sentence."""
-    if block.citation_source_number == 0 or not isVerified(block):
+    if block.citation_source_number == 0 or not isVerified(block, sources):
         return "NO"
     if all_verdicts is None:          # second checker failed: fall back to Layer 1 only
         return "PARTIAL"
     return all_verdicts.get(id(block), "NO")
 
 
-def verify_results(results):  # structured_data.results for **all_verdicts** 
+def verify_results(results, sources):  # structured_data.results for **all_verdicts** 
     """Runs both layers on a list of sentences. Returns verdicts for get_verdict()."""
-    items_to_verify = [block for block in results if block.citation_source_number != 0 and isVerified(block)]
+    items_to_verify = [block for block in results if block.citation_source_number != 0 and isVerified(block, sources)]
     return verify_sentence_quote(items_to_verify) # it at the end stores verdict_map in it like {id} -> "verdict"
 
 # ---------------- Presentation ----------------
-def generate_polished_synthesis(results, all_verdicts):
+def generate_polished_synthesis(results, all_verdicts, sources):
     """Groups verified sentences under their headings, keeping [n] citations.
     No extra LLM call, so nothing unchecked can slip in."""
     sections = {}
@@ -279,7 +302,7 @@ def generate_polished_synthesis(results, all_verdicts):
             not_covered.append(block.sentence.rstrip(". "))
             continue
 
-        verdict = get_verdict(block, all_verdicts)
+        verdict = get_verdict(block, all_verdicts, sources)
         if verdict == "YES":
             sections.setdefault(block.section.strip(), []).append(f"{sentence} [{number}].")
         elif verdict == "PARTIAL":
@@ -407,18 +430,18 @@ def run_research(question):
     structured_data.results = structured_data.results[:MAX_SENTENCES]
 
     # Step 6: verify (two layers), print the log, then the final grouped answer
-    all_verdicts = verify_results(structured_data.results)
+    all_verdicts = verify_results(structured_data.results, sources)
 
     # print("\n--- Fact Validation Log ---")
     # final_answer, v, p, u = print_log_and_counts(structured_data.results, all_verdicts)
     # print(f"\nVerification: {v} supported, {p} partly supported, {u} unverified")
 
     print("\n=== FINAL ANSWER ===")
-    final_answer = generate_polished_synthesis(structured_data.results, all_verdicts)
+    final_answer = generate_polished_synthesis(structured_data.results, all_verdicts, sources)
     print(final_answer)
     v_c = p_c = u_c = 0
     for block in structured_data.results:
-        verdict = get_verdict(block, all_verdicts)
+        verdict = get_verdict(block, all_verdicts, sources)
         if block.citation_source_number != 0 and verdict == "YES":            
             v_c += 1
         elif block.citation_source_number != 0 and verdict =="PARTIAL":
@@ -489,11 +512,11 @@ def run_terminal_chat(question, final_answer, formatted_sources):
             chat_data = StructuredAnswer.model_validate_json(reply.text)
             chat_data.results = chat_data.results[:MAX_SENTENCES]
 
-            chat_verdicts = verify_results(chat_data.results)  # checkks first layer and returns verdict map from function verify_sentence_quote
+            chat_verdicts = verify_results(chat_data.results, sources)  # checkks first layer and returns verdict map from function verify_sentence_quote
 
             v_c = p_c = u_c = 0
             for block in chat_data.results:
-                verdict = get_verdict(block, chat_verdicts)
+                verdict = get_verdict(block, chat_verdicts, sources)
                 if block.citation_source_number != 0 and verdict == "YES":
                     v_c += 1
                 elif block.citation_source_number != 0 and verdict == "PARTIAL":
@@ -502,10 +525,75 @@ def run_terminal_chat(question, final_answer, formatted_sources):
                     u_c += 1
 
             print("\nAI:")
-            print(generate_polished_synthesis(chat_data.results, chat_verdicts))
+            print(generate_polished_synthesis(chat_data.results, chat_verdicts, sources))
             print(f"\nVerification: {v_c} Supported, {p_c} Partial, {u_c} not-covered by sources")
 
         except SystemExit:
             raise
         except Exception as e:
             print(f"An error occurred while chatting: {e}")
+
+
+
+
+
+def create_research_chat(question, final_answer, formatted_sources):
+
+    system_instruction = f"""Today's date is {today}. You are now in a live conversation with the user about their research question.
+    You must answer using ONLY the sources provided.
+    Original question: {question}
+    Verified answer given so far:
+    {final_answer}
+    SOURCES:
+    {formatted_sources}
+
+    Rules:
+        1. Group sentences under short section headings, one heading per aspect. Put related sentences next to each other.
+        2. Write at most 30 sentences. Each sentence makes one factual claim and names its subject explicitly.
+        3. For each sentence, provide the exact source index number that supports it.
+        4. For each sentence, extract an EXACT word-for-word quote (8 to 25 words) from that source. No paraphrasing, no ellipses (...).
+        5. If a statement cannot be backed up by the provided sources, map the source number to 0 and leave the quote empty. Never use outside knowledge.
+        6. Detect whether the user's question requests a comparison, contrast,
+        or difference.
+        7. For comparison questions, organize the response by shared dimensions
+        and compare the subjects directly within each dimension.
+        8. Use consistent dimensions for both subjects wherever supported by
+        the sources. Do not simply give separate descriptions of each subject.
+        9. Answer the user's latest message directly. Use the original
+        question only as background context.
+        10. For follow-up comparisons, identify the subjects and dimensions
+            requested in the latest message.
+        11. If the supplied sources do not answer the follow-up, state
+            that the information is not covered. Do not invent an answer.
+        """
+    # we are creating chat (python object) here to keep track of the sessions 
+    chat = llm.chats.create(
+        model=MODEL,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=StructuredAnswer,
+            temperature=0.2,
+        ),
+    )
+    
+    return chat
+
+
+def run_follow_up(chat, user_follow_up, sources):
+
+    reply = chat.send_message(user_follow_up)
+
+    chat_data = StructuredAnswer.model_validate_json(reply.text)
+
+    chat_data.results = chat_data.results[:MAX_SENTENCES]
+
+    chat_verdicts = verify_results(chat_data.results, sources)
+
+    final_answer = generate_polished_synthesis(
+        chat_data.results,
+        chat_verdicts,
+        sources
+    )
+
+    return final_answer
