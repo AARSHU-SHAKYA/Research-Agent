@@ -160,10 +160,14 @@ if st.session_state.chat_id is not None:
     # index 0 in messages -> user's first question 
     # index 1: assistant's first reply 
     # after index 1, we are supposed to display sources 
-        if role == "assistant" and index == 1:
+        if role == "assistant" and index == 1 and saved_sources:  # we need to check if that chat actually has sources or not 
             with st.expander("📚Sources"):
                 for i, (title, url) in enumerate(saved_sources, start = 1):
                     st.markdown(f"[{i}] {title} - {url}")
+
+            st.info("💬 **Follow-up mode:** You're now in a research conversation. "
+            "Ask follow-up questions about the topic and the sources gathered above."
+            " If you want to research something else, start a **New Chat** from the sidebar.")                 
         
 
 else:
@@ -184,8 +188,11 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # create a new conversation only if it doesnt exost
-    if st.session_state.chat_id is None:
+    # check whether this is a new conversation 
+    new_chat = st.session_state.chat_id is None 
+
+    if new_chat:
+        # new conversation 
         title = prompt[:35]
 
         if len(prompt) > 35:
@@ -196,41 +203,62 @@ if prompt:
         st.session_state.chat_id = cursor.lastrowid    
 
     # save the user's message 
-    conn.execute("INSERT INTO messages(chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "user",prompt))
+    cursor.execute("INSERT INTO messages(chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "user",prompt))
     conn.commit()
 
-    # generate initial research answer 
-    assistant_reply, sources, formatted_sources = agent.run_research(prompt)
-
-    # save sources in sql database
-    for source in sources:
-        cursor.execute("""
-        INSERT INTO sources (chat_id, title, url, content) VALUES (?,?,?,?) 
-        """,
-        (st.session_state.chat_id, 
-        source["title"],
-        source["url"],
-        source["content"]
-        )
-        )
-        conn.commit()
-
-    # create gemini chat object for follow-up session
-    chat = agent.create_research_chat(prompt,assistant_reply, formatted_sources)
-
-    # store this object into session_state with current conversation's chat_id
-    st.session_state.followup_chats[st.session_state.chat_id] = chat 
-    
-    with st.chat_message("assistant"):
+    if new_chat:
+        # generate initial research answer
         with st.spinner("Researching and verifying sources..."):
+            assistant_reply, sources, formatted_sources = agent.run_research(prompt)
+
+        with st.chat_message("assiatant"):
             st.markdown(assistant_reply)
 
             with st.expander("📚 Sources"):
                 for i, source in enumerate(sources, start = 1):
                     st.markdown(f"[{i}] {source['title']} - {source['url']}")
+           
 
-    cursor.execute("INSERT INTO messages (chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "assistant",assistant_reply))
-    conn.commit()
+        # save sources in sql database
+        for source in sources:
+            cursor.execute("""
+            INSERT INTO sources (chat_id, title, url, content) VALUES (?,?,?,?) 
+            """,
+            (st.session_state.chat_id, 
+            source["title"],
+            source["url"],
+            source["content"]
+            )
+            )
+            conn.commit()
+
+        # create gemini chat object for follow-up session
+        chat = agent.create_research_chat(prompt,assistant_reply, formatted_sources)
+
+        # store this object into session_state with current conversation's chat_id
+        st.session_state.followup_chats[st.session_state.chat_id] = chat 
+        
+        cursor.execute("INSERT INTO messages (chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "assistant",assistant_reply))
+        conn.commit()
+
+
+    else:
+
+        # follow up question 
+
+        # retrive existing chat object 
+        chat = st.session_state.followup_chats[st.session_state.chat_id]
+
+        # generate follow-up answer 
+        with st.spinner("Thinking and checking sources..."):
+            assistant_followup_reply = agent.run_follow_up(chat, prompt)
+
+        with st.chat_message("assistant"):
+            st.markdown(assistant_followup_reply)
+
+        # save the assiatant follow up reply 
+        cursor.execute("INSERT INTO messages (chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "assistant", assistant_followup_reply))
+        conn.commit()
 
     # we need to retrive updated conversation in the sidebar, so we retrive chats again
     # we want to update our sidebar so we rerun our session 
