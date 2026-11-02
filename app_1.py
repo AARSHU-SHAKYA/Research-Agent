@@ -1,5 +1,6 @@
 import streamlit as st
 import sqlite3
+import agent_v6 as agent
 
 # establish connection betweem python and database 
 conn = sqlite3.connect("chat_history_demo.db")
@@ -27,6 +28,19 @@ role TEXT,
 content TEXT,
 FOREIGN KEY(chat_id) REFERENCES chats(chat_id)
 )
+""")
+conn.commit()
+
+
+# ------------------ sources table --------------
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS sources(
+source_id INTEGER PRIMARY KEY AUTOINCREMENT,
+chat_id INTEGER,
+title TEXT,
+url TEXT,
+content TEXT,
+FOREIGN KEY(chat_id) REFERENCES chats(chat_id))
 """)
 conn.commit()
 
@@ -75,11 +89,17 @@ padding-top: 1.5rem !important;
 """, unsafe_allow_html= True)
 
 
-st.title("Resora AI")
+st.title("ResAI")
+
 # Check whether a chat_id already exists in the current Streamlit session.
 # Session state preserves values across reruns, so we only initialize it once.
 if "chat_id" not in st.session_state:
     st.session_state.chat_id = None
+
+
+# create a session to keep hold of gemini chat oject that will be created for followup question
+if "followup_chats" not in st.session_state:
+    st.session_state.followup_chats = {}  # it will store gemini chat oject with each object's chat_id as its key.
 
 # st.write("Current chat id:", st.session_state.chat_id)
 
@@ -111,8 +131,11 @@ with st.sidebar:
                     cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
 
                     cursor.execute("DELETE FROM chats WHERE chat_id = ?", (chat_id,))
-
                     conn.commit()
+
+                    # when a conversation is deleted, its gemini session should also be removed 
+                    if chat_id in st.session_state.followup_chats:
+                        del st.session_state.followup_chats[chat_id]
 
                     if st.session_state.chat_id == chat_id:
                         st.session_state.chat_id = None
@@ -125,9 +148,23 @@ if st.session_state.chat_id is not None:
     cursor.execute("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY message_id",(st.session_state.chat_id,))
     messages = cursor.fetchall()
 
-    for role, content in messages:
+    # retrive saved sources
+    cursor.execute("SELECT title, url FROM sources WHERE chat_id = ?", (st.session_state.chat_id,))    
+    saved_sources = cursor.fetchall()  # list of tuples 
+    
+    for index, (role, content) in enumerate(messages):
         with st.chat_message(role):
             st.markdown(content)
+
+    # display sources only under initial research answer 
+    # index 0 in messages -> user's first question 
+    # index 1: assistant's first reply 
+    # after index 1, we are supposed to display sources 
+        if role == "assistant" and index == 1:
+            with st.expander("📚Sources"):
+                for i, (title, url) in enumerate(saved_sources, start = 1):
+                    st.markdown(f"[{i}] {title} - {url}")
+        
 
 else:
     st.markdown("""
@@ -136,8 +173,12 @@ else:
 </div>
 """, unsafe_allow_html= True)
 
+
+
 # taking user input 
 prompt = st.chat_input("Ask any research question...")
+
+
 
 if prompt:
     with st.chat_message("user"):
@@ -158,11 +199,35 @@ if prompt:
     conn.execute("INSERT INTO messages(chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "user",prompt))
     conn.commit()
 
-    # for checking purpose, we are using static reply
-    assistant_reply = "Hello!, I am your assistant."
+    # generate initial research answer 
+    assistant_reply, sources, formatted_sources = agent.run_research(prompt)
 
+    # save sources in sql database
+    for source in sources:
+        cursor.execute("""
+        INSERT INTO sources (chat_id, title, url, content) VALUES (?,?,?,?) 
+        """,
+        (st.session_state.chat_id, 
+        source["title"],
+        source["url"],
+        source["content"]
+        )
+        )
+        conn.commit()
+
+    # create gemini chat object for follow-up session
+    chat = agent.create_research_chat(prompt,assistant_reply, formatted_sources)
+
+    # store this object into session_state with current conversation's chat_id
+    st.session_state.followup_chats[st.session_state.chat_id] = chat 
+    
     with st.chat_message("assistant"):
-        st.markdown(assistant_reply)
+        with st.spinner("Researching and verifying sources..."):
+            st.markdown(assistant_reply)
+
+            with st.expander("📚 Sources"):
+                for i, source in enumerate(sources, start = 1):
+                    st.markdown(f"[{i}] {source['title']} - {source['url']}")
 
     cursor.execute("INSERT INTO messages (chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "assistant",assistant_reply))
     conn.commit()
