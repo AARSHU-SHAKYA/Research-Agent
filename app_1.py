@@ -149,8 +149,13 @@ if st.session_state.chat_id is not None:
     messages = cursor.fetchall()
 
     # retrive saved sources
-    cursor.execute("SELECT title, url FROM sources WHERE chat_id = ?", (st.session_state.chat_id,))    
-    saved_sources = cursor.fetchall()  # list of tuples 
+    cursor.execute("SELECT title, url, content FROM sources WHERE chat_id = ?", (st.session_state.chat_id,))  
+
+    # we need dictionary to access sources in our code, we dont need tuple so we do the folloeing:   
+    saved_sources = [
+        {"title": title, "url": url, "content": content}
+        for title, url, content in cursor.fetchall()
+    ]
     
     for index, (role, content) in enumerate(messages):
         with st.chat_message(role):
@@ -162,8 +167,8 @@ if st.session_state.chat_id is not None:
     # after index 1, we are supposed to display sources 
         if role == "assistant" and index == 1 and saved_sources:  # we need to check if that chat actually has sources or not 
             with st.expander("📚Sources"):
-                for i, (title, url) in enumerate(saved_sources, start = 1):
-                    st.markdown(f"[{i}] {title} - {url}")
+                for i, source in enumerate(saved_sources, start = 1):
+                    st.markdown(f"[{i}] {source['title']} - {source['url']}")
 
             st.info("💬 **Follow-up mode:** You're now in a research conversation. "
             "Ask follow-up questions about the topic and the sources gathered above."
@@ -211,7 +216,7 @@ if prompt:
         with st.spinner("Researching and verifying sources..."):
             assistant_reply, sources, formatted_sources = agent.run_research(prompt)
 
-        with st.chat_message("assiatant"):
+        with st.chat_message("assistant"):
             st.markdown(assistant_reply)
 
             with st.expander("📚 Sources"):
@@ -244,14 +249,40 @@ if prompt:
 
     else:
 
-        # follow up question 
+        # retirve first two messages for context 
+        cursor.execute("""
+            SELECT role, content
+            FROM messages
+            WHERE chat_id = ?
+            ORDER BY message_id
+            LIMIT 2
+        """, (st.session_state.chat_id,))
 
-        # retrive existing chat object 
-        chat = st.session_state.followup_chats[st.session_state.chat_id]
+        initial_messages = cursor.fetchall()
+        original_question = initial_messages[0][1]  # 0 -> row, 1 -> content 
+        initial_answer = initial_messages[1][1]  #1 -> row, 1-> content
+
+        rebuild_formatted_sources = ""
+
+        for i, source in enumerate(saved_sources, start =1):
+            rebuild_formatted_sources += f"[{i}] {source['title']}\n{source['content']}\n\n"
+
+            if st.session_state_chat_id in st.session_state_followup_chats:
+                # retrive existing chat object 
+                chat = st.session_state.followup_chats[st.session_state.chat_id]
+
+            else:
+                chat = agent.create_research_chat(
+                    original_question,
+                    initial_answer,
+                    rebuild_formatted_sources
+                )    
+
+                st.session_state_followup_chats[st.session_state.chat_id] = chat        
 
         # generate follow-up answer 
         with st.spinner("Thinking and checking sources..."):
-            assistant_followup_reply = agent.run_follow_up(chat, prompt)
+            assistant_followup_reply = agent.run_follow_up(chat, prompt, saved_sources)
 
         with st.chat_message("assistant"):
             st.markdown(assistant_followup_reply)
