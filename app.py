@@ -267,18 +267,18 @@ if prompt:
         for i, source in enumerate(saved_sources, start =1):
             rebuild_formatted_sources += f"[{i}] {source['title']}\n{source['content']}\n\n"
 
-            if st.session_state_chat_id in st.session_state_followup_chats:
-                # retrive existing chat object 
-                chat = st.session_state.followup_chats[st.session_state.chat_id]
+        if st.session_state.chat_id in st.session_state.followup_chats:
+            # retrive existing chat object 
+            chat = st.session_state.followup_chats[st.session_state.chat_id]
 
-            else:
-                chat = agent.create_research_chat(
-                    original_question,
-                    initial_answer,
-                    rebuild_formatted_sources
-                )    
+        else:
+            chat = agent.create_research_chat(
+                original_question,
+                initial_answer,
+                rebuild_formatted_sources
+            )    
 
-                st.session_state_followup_chats[st.session_state.chat_id] = chat        
+            st.session_state.followup_chats[st.session_state.chat_id] = chat        
 
         # generate follow-up answer 
         with st.spinner("Thinking and checking sources..."):
