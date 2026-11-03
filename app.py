@@ -237,7 +237,7 @@ if prompt:
             )
             conn.commit()
 
-        # create gemini chat object for follow-up session
+        # create gemini chat object for follow-up session (active session chat)
         chat = agent.create_research_chat(prompt,assistant_reply, formatted_sources)
 
         # store this object into session_state with current conversation's chat_id
@@ -264,7 +264,7 @@ if prompt:
 
         rebuild_formatted_sources = ""
 
-        for i, source in enumerate(saved_sources, start =1):
+        for i, source in enumerate(saved_sources, start =1):  # saved sources retirve sources from the chat_id that we are trying to access 
             rebuild_formatted_sources += f"[{i}] {source['title']}\n{source['content']}\n\n"
 
         if st.session_state.chat_id in st.session_state.followup_chats:
