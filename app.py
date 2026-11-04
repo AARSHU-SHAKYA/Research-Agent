@@ -294,3 +294,7 @@ if prompt:
     # we need to retrive updated conversation in the sidebar, so we retrive chats again
     # we want to update our sidebar so we rerun our session 
     st.rerun()
+
+
+
+# we need to add codes for follow-up questions run tavily, searh and give results 
