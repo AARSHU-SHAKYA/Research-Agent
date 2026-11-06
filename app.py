@@ -290,7 +290,7 @@ if prompt:
         for source in new_sources:
             cursor.execute("""
             INSERT INTO sources (chat_id, title, url, content) VALUES (?,?,?,?)""", (st.session_state.chat_id, source['title'], source['url'], source['content']))
-            conn.commit()    
+        conn.commit()    
 
         with st.chat_message("assistant"):
             st.markdown(assistant_followup_reply)
