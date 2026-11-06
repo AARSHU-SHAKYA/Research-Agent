@@ -152,7 +152,7 @@ if st.session_state.chat_id is not None:
     messages = cursor.fetchall()
 
     # retrive saved sources
-    cursor.execute("SELECT title, url, content FROM sources WHERE chat_id = ?", (st.session_state.chat_id,))  
+    cursor.execute("SELECT title, url, content FROM sources WHERE chat_id = ? ORDER BY source_id", (st.session_state.chat_id,))  
 
     # we need dictionary to access sources in our code, we dont need tuple so we do the folloeing:   
     saved_sources = [
