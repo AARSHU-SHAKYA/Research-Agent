@@ -56,5 +56,4 @@ if prompt:
                 "role": "assistant",
                 "content": message,
             })
-
-    
+            
