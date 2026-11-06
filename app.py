@@ -133,6 +133,9 @@ with st.sidebar:
                     cursor.execute("DELETE FROM chats WHERE chat_id = ?", (chat_id,))
                     conn.commit()
 
+                    cursor.execute("DELETE FROM sources WHERE chat_id = ?", (chat_id,))
+                    conn.commit()
+
                     # when a conversation is deleted, its gemini session should also be removed 
                     if chat_id in st.session_state.followup_chats:
                         del st.session_state.followup_chats[chat_id]
