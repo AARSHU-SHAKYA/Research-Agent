@@ -295,6 +295,13 @@ if prompt:
         with st.chat_message("assistant"):
             st.markdown(assistant_followup_reply)
 
+            if new_sources:
+                with st.expander("📚 Additional Sources"):
+                    for i, source in enumerate(new_sources, start = len(saved_sources)+1):
+                        st.markdown(f"[{i}] {source['title']} - {source['url']}")
+
+
+
         # save the assiatant follow up reply 
         cursor.execute("INSERT INTO messages (chat_id, role, content) VALUES (?,?,?)", (st.session_state.chat_id, "assistant", assistant_followup_reply))
         conn.commit()
