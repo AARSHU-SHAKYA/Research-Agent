@@ -391,7 +391,7 @@ def run_research(question):
 
     Rules:
     1. Group sentences under short section headings that match the question's aspects. Put related sentences together so each section reads naturally.
-    2. Write a concise answer, usually 10 to 40 sentences, and never exceed 20 sentences in total. Each sentence should make one clear factual claim and explicitly identify its subject. Avoid vague references such as "it" or "they" when the subject is unclear.
+    2. The answer should contain no more than {MAX_SENTENCES} sentences in total.
     3. For every factual sentence, provide the number of ONE source that directly supports the claim.
     4. For every factual sentence, provide the shortest exact quote from that source that adequately supports the claim, usually 8–25 words. Shorter quotes are acceptable when they fully support the claim.
     5. Copy quotes character for character from the source. Never paraphrase quotes, insert "...", or combine text from separate passages.
