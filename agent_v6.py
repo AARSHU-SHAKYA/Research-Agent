@@ -124,27 +124,24 @@ def get_sources(sub_questions):
     return new_count
 
 
-def search_followup_sources(user_follow_up, existing_sources):
-    existing_urls = {source["url"] for source in existing_sources}
+#-------------- follow-up search engine -----------------
+
+def search_followup_sources(user_follow_up, sources):
+    existing_urls = {source['url'] for source in sources}
     new_sources = []
 
+    # add a layer of safety with try and exception 
     try:
-        results = tavily.search(
-            user_follow_up,
-            max_results=RESULTS_PER_SEARCH,
-            search_depth=SEARCH_DEPTH
-        )["results"]
-
+        results = tavily.search(user_follow_up, max_results=RESULTS_PER_SEARCH,search_depth=SEARCH_DEPTH)["results"]
         for result in results:
-            if result["url"] not in existing_urls:
+            if (result['url'] not in existing_urls):
+                existing_urls.add(result['url'])
                 new_sources.append(result)
-                existing_urls.add(result["url"])
 
     except Exception as e:
         print(f"Follow-up search failed: {e}")
 
-    return new_sources
-
+    return new_sources 
 
 
 def find_gaps(question, searched):
@@ -565,6 +562,10 @@ def create_research_chat(question, final_answer, formatted_sources):
             requested in the latest message.
         11. If the supplied sources do not answer the follow-up, state
             that the information is not covered. Do not invent an answer.
+        12. If the provided sources do not contain enough information
+            to answer the user's latest question, return exactly:
+            NOT_COVERED
+            Do not generate an unsupported answer in this case.
         """
     # we are creating chat (python object) here to keep track of the sessions 
     chat = llm.chats.create(
@@ -583,17 +584,61 @@ def create_research_chat(question, final_answer, formatted_sources):
 def run_follow_up(chat, user_follow_up, sources):
 
     reply = chat.send_message(user_follow_up)
+    draft_data = StructuredAnswer.model_validate_json(reply.text)
+    draft_data.results = draft_data.results[:MAX_SENTENCES]
 
-    chat_data = StructuredAnswer.model_validate_json(reply.text)
+    needs_search = not draft_data.results or any(block.citation_source_number == 0 or not isVerified(block, sources) for block in draft_data.results)
+    
+    # creating empty new_sources if new_sources is empty to handle errors  
+    new_sources = []
+    all_sources = list(sources) 
+    chat_data = draft_data  # initializing if no_search is required 
+    
+    if needs_search:
+        new_sources = search_followup_sources(user_follow_up, sources)
 
-    chat_data.results = chat_data.results[:MAX_SENTENCES]
+        if new_sources:
+            all_sources.extend(new_sources)  # add new sources to existing sources 
 
-    chat_verdicts = verify_results(chat_data.results, sources)
+            additional_sources = ""
+            for i, source in enumerate(new_sources, start = len(sources) + 1):
+                additional_sources += f"[{i}] {source['title']}\n{source['content']}\n\n"
+
+
+            retry_prompt = f"""
+                Answer the latest question using these additional sources.
+                Your previous answer did not have sufficient
+                support from the original sources.
+
+                Here are additional sources retrieved for
+                the latest follow-up question:
+
+                {additional_sources}
+
+                Latest follow-up question:
+                {user_follow_up}
+
+                Rewrite your answer using the original sources
+                and these additional sources together.
+
+                The original source numbers remain unchanged.
+                The additional source numbers start at
+                {len(sources) + 1}.
+
+                Follow all the original system instructions.
+                Return the answer using the required JSON schema.
+                """
+
+            reply = chat.send_message(retry_prompt)
+            chat_data = StructuredAnswer.model_validate_json(reply.text)
+            chat_data.results = chat_data.results[:MAX_SENTENCES]
+
+    chat_verdicts = verify_results(chat_data.results, all_sources)
 
     final_answer = generate_polished_synthesis(
         chat_data.results,
         chat_verdicts,
-        sources
+        all_sources
     )
 
-    return final_answer
+    return final_answer, new_sources 
