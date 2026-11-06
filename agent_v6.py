@@ -562,10 +562,6 @@ def create_research_chat(question, final_answer, formatted_sources):
             requested in the latest message.
         11. If the supplied sources do not answer the follow-up, state
             that the information is not covered. Do not invent an answer.
-        12. If the provided sources do not contain enough information
-            to answer the user's latest question, return exactly:
-            NOT_COVERED
-            Do not generate an unsupported answer in this case.
         """
     # we are creating chat (python object) here to keep track of the sessions 
     chat = llm.chats.create(
