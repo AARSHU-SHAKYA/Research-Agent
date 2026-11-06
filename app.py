@@ -282,7 +282,12 @@ if prompt:
 
         # generate follow-up answer 
         with st.spinner("Thinking and checking sources..."):
-            assistant_followup_reply = agent.run_follow_up(chat, prompt, saved_sources)
+            assistant_followup_reply, new_sources = agent.run_follow_up(chat, prompt, saved_sources)
+
+        for source in new_sources:
+            cursor.execute("""
+            INSERT INTO sources (chat_id, title, url, content) VALUES (?,?,?,?)""", (st.session_state.chat_id, source['title'], source['url'], source['content']))
+            conn.commit()    
 
         with st.chat_message("assistant"):
             st.markdown(assistant_followup_reply)
