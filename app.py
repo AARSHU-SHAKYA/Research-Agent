@@ -285,12 +285,18 @@ if prompt:
 
         # generate follow-up answer 
         with st.spinner("Thinking and checking sources..."):
-            assistant_followup_reply, new_sources = agent.run_follow_up(chat, prompt, saved_sources)
+            try:
+                assistant_followup_reply, new_sources = agent.run_follow_up(chat, prompt, saved_sources)
+
+            except Exception as e:
+                print("Gemini error: {e}")    
+                st.error("Research is temporarily unavailable. Please try again later.")
+                st.stop()
 
         for source in new_sources:
             cursor.execute("""
             INSERT INTO sources (chat_id, title, url, content) VALUES (?,?,?,?)""", (st.session_state.chat_id, source['title'], source['url'], source['content']))
-        conn.commit()    
+        conn.commit()  
 
         with st.chat_message("assistant"):
             st.markdown(assistant_followup_reply)
